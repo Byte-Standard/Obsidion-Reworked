@@ -80,7 +80,7 @@ local Library = {
     Scheme = {
         BackgroundColor = Color3.fromRGB(15, 15, 15),
         MainColor = Color3.fromRGB(25, 25, 25),
-        AccentColor = Color3.fromRGB(125, 85, 255),
+        AccentColor = Color3.fromRGB(165, 153, 206),
         OutlineColor = Color3.fromRGB(40, 40, 40),
         FontColor = Color3.new(1, 1, 1),
         Font = Font.fromEnum(Enum.Font.Code),
@@ -855,10 +855,6 @@ function Library:Validate(Table: { [string]: any }, Template: { [string]: any })
     end
 
     for k, v in pairs(Template) do
-        if typeof(k) == "number" then
-            continue
-        end
-
         if typeof(v) == "table" then
             Table[k] = Library:Validate(Table[k], v)
         elseif Table[k] == nil then
@@ -2389,6 +2385,7 @@ do
 
             ColorPicker:Update()
         end)
+        
         RgbBox.FocusLost:Connect(function(Enter)
             if not Enter then
                 return
@@ -2443,59 +2440,190 @@ do
         })
     end
 
-    function Funcs:AddLabel(...)
-        local Data = {}
-
-        local First = select(1, ...)
-        local Second = select(2, ...)
-
-        if typeof(First) == "table" or typeof(Second) == "table" then
-            local Params = typeof(First) == "table" and First or Second
-
-            Data.Text = Params.Text or ""
-            Data.DoesWrap = Params.DoesWrap or false
-            Data.Size = Params.Size or 14
-            Data.Visible = Params.Visible or true
-            Data.Idx = typeof(Second) == "table" and First or nil
-        else
-            Data.Text = First or ""
-            Data.DoesWrap = Second or false
-            Data.Size = 14
-            Data.Visible = true
-            Data.Idx = select(3, ...) or nil
-        end
-
+    function Funcs:AddViewportframe(obj, isapet, sizemultiplier)
         local Groupbox = self
         local Container = Groupbox.Container
-
-        local Label = {
-            Text = Data.Text,
-            DoesWrap = Data.DoesWrap,
-
-            Visible = Data.Visible,
-            Type = "Label",
-        }
-
-        local TextLabel = New("TextLabel", {
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 18),
-            Text = Label.Text,
-            TextSize = Data.Size,
-            TextWrapped = Label.DoesWrap,
-            TextXAlignment = Groupbox.IsKeyTab and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
+    
+        local Holder = New("Frame", {
+            BackgroundColor3 = "MainColor",
+            BorderColor3 = "OutlineColor",
+            BorderSizePixel = 1,
+            Size = UDim2.new(1, 0, 0, 500),
             Parent = Container,
         })
+    
+        local viewport = Instance.new("ViewportFrame")
+        viewport.Size = UDim2.new(1, 0, 1, 0)
+        viewport.BackgroundTransparency = 1
+        viewport.Parent = Holder
+    
+        local camera = Instance.new("Camera")
+        camera.Parent = viewport
+        viewport.CurrentCamera = camera
+    
+        if obj then
+            local clone = obj:Clone()
+            clone.Parent = viewport
+    
+            if clone:IsA("Model") and not clone.PrimaryPart then
+                local base = clone:FindFirstChildWhichIsA("BasePart")
+                if base then
+                    clone.PrimaryPart = base
+                end
+            end
+    
+            local primary = clone:IsA("Model") and clone.PrimaryPart or clone
+    
+            if primary then
+                clone:SetPrimaryPartCFrame(CFrame.new(0, 0, 0))
+    
+                if isapet == true then
+                    local rot = CFrame.Angles(math.rad(-270), 0, 0) * CFrame.Angles(0, math.rad(90), 0)
+                    clone:SetPrimaryPartCFrame(rot)
+                end
+    
+                local size = clone:GetExtentsSize()
+                local maxDim = math.max(size.X, size.Y, size.Z)
+                local camDist = maxDim * (sizemultiplier or 1)
+    
+                local camPos = Vector3.new(0, size.Y/4.3, camDist)
+                camera.CFrame = CFrame.lookAt(camPos, Vector3.new(0, size.Y/4.3, 0))
+            end
+        end
+    
+        local function resizeHolder()
+            local width = Holder.AbsoluteSize.X
+            if width > 0 and Holder.Size.Y.Offset ~= width then
+                Holder.Size = UDim2.new(1, 0, 0, width)
+            end
+        end
+    
+        task.defer(function()
+            resizeHolder()
+            Holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(resizeHolder)
+        end)
+    
+        Groupbox:Resize()
+    
+        table.insert(Groupbox.Elements, {
+            Holder = Holder,
+            Type = "Viewportframe",
+            Viewport = viewport,
+            Camera = camera,
+        })
+    
+        return Holder
+    end
 
-        function Label:SetVisible(Visible: boolean)
-            Label.Visible = Visible
+    function Funcs:UpdateViewportObject(holder, newObj, isapet, sizemultiplier)
+        if not holder or not newObj then return end
 
-            TextLabel.Visible = Label.Visible
-            Groupbox:Resize()
+        local viewport = holder:FindFirstChildWhichIsA("ViewportFrame")
+        if not viewport then return end
+
+        for _, child in ipairs(viewport:GetChildren()) do
+            if not child:IsA("Camera") then
+                child:Destroy()
+            end
         end
 
-        function Label:SetText(Text: string)
+        local camera = viewport:FindFirstChildWhichIsA("Camera")
+        if not camera then
+            camera = Instance.new("Camera")
+            camera.Parent = viewport
+            viewport.CurrentCamera = camera
+        end
+
+        local clone = newObj:Clone()
+        clone.Parent = viewport
+
+        if clone:IsA("Model") and not clone.PrimaryPart then
+            local base = clone:FindFirstChildWhichIsA("BasePart")
+            if base then
+                clone.PrimaryPart = base
+            end
+        end
+
+        local primary = clone:IsA("Model") and clone.PrimaryPart or clone
+
+        if primary then
+            clone:SetPrimaryPartCFrame(CFrame.new(0, 0, 0))
+
+            if isapet == true then
+                local rot = CFrame.Angles(math.rad(-270), 0, 0) * CFrame.Angles(0, math.rad(90), 0)
+                clone:SetPrimaryPartCFrame(rot)
+            end
+
+            local size = clone:GetExtentsSize()
+            local maxDim = math.max(size.X, size.Y, size.Z)
+            local camDist = maxDim * sizemultiplier
+
+            local camPos = Vector3.new(0, size.Y/4.3, camDist)
+            camera.CFrame = CFrame.lookAt(camPos, Vector3.new(0, size.Y/4.3, 0))
+        end
+    end
+
+
+    function Funcs:AddLabel(...)
+		local args = { ... }
+		local Data = {}
+		local color
+
+		if typeof(args[#args]) == "Color3" then
+			color = table.remove(args, #args)
+		end
+
+		local First = args[1]
+		local Second = args[2]
+
+		if typeof(First) == "table" or typeof(Second) == "table" then
+			local Params = typeof(First) == "table" and First or Second
+
+			Data.Text = Params.Text or ""
+			Data.DoesWrap = Params.DoesWrap or false
+			Data.Size = Params.Size or 14
+			Data.Visible = Params.Visible or true
+			Data.Idx = typeof(Second) == "table" and First or nil
+		else
+			Data.Text = First or ""
+			Data.DoesWrap = Second or false
+			Data.Size = 14
+			Data.Visible = true
+			Data.Idx = args[3]
+		end
+
+		local Groupbox = self
+		local Container = Groupbox.Container
+
+		local Label = {
+			Text = Data.Text,
+			DoesWrap = Data.DoesWrap,
+			Visible = Data.Visible,
+			Type = "Label",
+		}
+
+		local TextLabel = New("TextLabel", {
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 18),
+			Text = Label.Text,
+			TextSize = Data.Size,
+			TextWrapped = Label.DoesWrap,
+			TextXAlignment = Groupbox.IsKeyTab and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left,
+			TextColor3 = color or Color3.new(1, 1, 1),
+			Parent = Container,
+		})
+
+		function Label:SetVisible(Visible: boolean)
+			Label.Visible = Visible
+			TextLabel.Visible = Visible
+			Groupbox:Resize()
+		end
+
+		function Label:SetText(Text: string, Color: Color3?)
             Label.Text = Text
             TextLabel.Text = Text
+            
+            TextLabel.TextColor3 = Color or Color3.fromRGB(255, 255, 255)
 
             if Label.DoesWrap then
                 local _, Y =
@@ -2506,55 +2634,52 @@ do
             Groupbox:Resize()
         end
 
-        if Label.DoesWrap then
-            local _, Y =
-                Library:GetTextBounds(Label.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
-            TextLabel.Size = UDim2.new(1, 0, 0, Y + 4 * Library.DPIScale)
-        else
-            New("UIListLayout", {
-                FillDirection = Enum.FillDirection.Horizontal,
-                HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                Padding = UDim.new(0, 6),
-                Parent = TextLabel,
-            })
-        end
+		if Label.DoesWrap then
+			local _, Y =
+				Library:GetTextBounds(Label.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
+			TextLabel.Size = UDim2.new(1, 0, 0, Y + 4 * Library.DPIScale)
+		else
+			New("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Right,
+				Padding = UDim.new(0, 6),
+				Parent = TextLabel,
+			})
+		end
 
-        if Data.DoesWrap then
-            local Last = TextLabel.AbsoluteSize
+		if Data.DoesWrap then
+			local Last = TextLabel.AbsoluteSize
+			TextLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+				if TextLabel.AbsoluteSize == Last then return end
 
-            TextLabel:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-                if TextLabel.AbsoluteSize == Last then
-                    return
-                end
+				local _, Y =
+					Library:GetTextBounds(Label.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
+				TextLabel.Size = UDim2.new(1, 0, 0, Y + 4 * Library.DPIScale)
+				Last = TextLabel.AbsoluteSize
+				Groupbox:Resize()
+			end)
+		end
 
-                local _, Y =
-                    Library:GetTextBounds(Label.Text, TextLabel.FontFace, TextLabel.TextSize, TextLabel.AbsoluteSize.X)
-                TextLabel.Size = UDim2.new(1, 0, 0, Y + 4 * Library.DPIScale)
+		Groupbox:Resize()
 
-                Last = TextLabel.AbsoluteSize
-                Groupbox:Resize()
-            end)
-        end
+		Label.TextLabel = TextLabel
+		Label.Container = Container
+		if not Data.DoesWrap then
+			setmetatable(Label, BaseAddons)
+		end
 
-        Groupbox:Resize()
+		Label.Holder = TextLabel
+		table.insert(Groupbox.Elements, Label)
 
-        Label.TextLabel = TextLabel
-        Label.Container = Container
-        if not Data.DoesWrap then
-            setmetatable(Label, BaseAddons)
-        end
+		if Data.Idx then
+			Labels[Data.Idx] = Label
+		else
+			table.insert(Labels, Label)
+		end
 
-        Label.Holder = TextLabel
-        table.insert(Groupbox.Elements, Label)
+		return Label
+	end
 
-        if Data.Idx then
-            Labels[Data.Idx] = Label
-        else
-            table.insert(Labels, Label)
-        end
-
-        return Label
-    end
 
     function Funcs:AddButton(...)
         local function GetInfo(...)
